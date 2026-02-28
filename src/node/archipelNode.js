@@ -227,25 +227,27 @@ class ArchipelNode {
   }
 
   trustPeer(nodeId) {
-    if (!this.trustStore[nodeId]) {
-      this.trustStore[nodeId] = {
+    const resolvedNodeId = this._resolvePeerNodeId(nodeId);
+
+    if (!this.trustStore[resolvedNodeId]) {
+      this.trustStore[resolvedNodeId] = {
         fingerprint: null,
         status: "trusted",
         firstSeenAt: null,
       };
     } else {
-      this.trustStore[nodeId].status = "trusted";
-      this.trustStore[nodeId].trustedAt = new Date().toISOString();
+      this.trustStore[resolvedNodeId].status = "trusted";
+      this.trustStore[resolvedNodeId].trustedAt = new Date().toISOString();
     }
 
-    const peer = this.peerTable.getPeer(nodeId);
+    const peer = this.peerTable.getPeer(resolvedNodeId);
     if (peer) {
       peer.trusted = true;
       this.peerTable.upsertPeer(peer);
     }
 
     this._saveState();
-    return this.trustStore[nodeId];
+    return this.trustStore[resolvedNodeId];
   }
 
   _createHandshakePayload(ephemeralPublicKey) {
@@ -401,9 +403,10 @@ class ArchipelNode {
   async _requestPeer(peerNodeId, packetType, payload, opts = {}) {
     const expectType = opts.expectType;
     const timeoutMs = Number(opts.timeoutMs || 10_000);
+    const resolvedPeerNodeId = this._resolvePeerNodeId(peerNodeId);
 
-    const peer = this.peerTable.getPeer(peerNodeId);
-    if (!peer) throw new Error(`unknown peer ${peerNodeId}`);
+    const peer = this.peerTable.getPeer(resolvedPeerNodeId);
+    if (!peer) throw new Error(`unknown peer ${resolvedPeerNodeId}`);
 
     const socket = net.connect({ host: peer.ip, port: peer.tcpPort });
     const chan = new SecureChannelState({ windowSize: 64 });
@@ -419,7 +422,7 @@ class ArchipelNode {
         if (done) return;
         done = true;
         socket.destroy();
-        reject(new Error(`request timeout to ${peerNodeId}`));
+        reject(new Error(`request timeout to ${resolvedPeerNodeId}`));
       }, timeoutMs);
 
       const finish = (fn, value) => {
@@ -436,8 +439,8 @@ class ArchipelNode {
             if (type !== FRAME_KX_PUB) throw new Error("expected handshake frame");
 
             const handshakePeer = this._parseAndVerifyHandshake(framePayload);
-            if (handshakePeer.nodeId !== peerNodeId) {
-              throw new Error(`connected peer mismatch expected=${peerNodeId} got=${handshakePeer.nodeId}`);
+            if (handshakePeer.nodeId !== resolvedPeerNodeId) {
+              throw new Error(`connected peer mismatch expected=${resolvedPeerNodeId} got=${handshakePeer.nodeId}`);
             }
 
             const keys = await deriveSessionKeys("client", myKx, handshakePeer.ephemeralPublicKey);
@@ -487,6 +490,26 @@ class ArchipelNode {
     this.messages.push(entry);
     if (this.messages.length > 500) this.messages = this.messages.slice(-500);
     this._saveState();
+  }
+
+  _resolvePeerNodeId(nodeIdInput) {
+    const cleaned = String(nodeIdInput || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "");
+
+    if (!cleaned) throw new Error("node_id vide");
+
+    const exact = this.peerTable.getPeer(cleaned);
+    if (exact) return exact.nodeId;
+
+    const peers = this.peerTable.getPeers();
+    const matches = peers.filter((p) => p.nodeId.startsWith(cleaned));
+
+    if (matches.length === 1) return matches[0].nodeId;
+    if (matches.length > 1) throw new Error("node_id ambigu (plusieurs peers)");
+
+    throw new Error("node_id introuvable dans les peers");
   }
 
   _ackPacket(payload) {
@@ -593,9 +616,10 @@ class ArchipelNode {
 
   async sendMessage(nodeId, text) {
     if (!text || !String(text).trim()) throw new Error("message vide");
+    const resolvedNodeId = this._resolvePeerNodeId(nodeId);
 
     const response = await this._requestPeer(
-      nodeId,
+      resolvedNodeId,
       TYPE.MSG,
       {
         text: String(text),
@@ -608,7 +632,7 @@ class ArchipelNode {
     this._appendMessage({
       ts: new Date().toISOString(),
       direction: "out",
-      to: nodeId,
+      to: resolvedNodeId,
       text: String(text),
     });
 
@@ -660,6 +684,7 @@ class ArchipelNode {
   }
 
   async sendFile(nodeId, filePath) {
+    const resolvedNodeId = this._resolvePeerNodeId(nodeId);
     const { manifest, absPath } = await this._buildManifest(filePath);
 
     this.shares[manifest.file_id] = {
@@ -672,7 +697,7 @@ class ArchipelNode {
     this._saveState();
 
     const response = await this._requestPeer(
-      nodeId,
+      resolvedNodeId,
       TYPE.MANIFEST,
       { manifest },
       { expectType: TYPE.ACK, timeoutMs: 15_000 }

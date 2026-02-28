@@ -3,84 +3,82 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>API ASSASSAINS - Archipel Control</title>
+    <title>API ASSASSAINS Chat</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="backdrop"></div>
 
-    <header class="hero">
-      <div class="hero-media">
-        <img class="brand-logo" src="/assets/apiassassains.png" alt="Logo API Assassains" />
-        <img class="brand-ring" src="/assets/apiassassains.jpg" alt="Artwork API Assassains" />
+    <header class="topbar">
+      <div class="brand-wrap">
+        <img class="brand-logo" src="/assets/apiassassains.png" alt="API ASSASSAINS" />
+        <div>
+          <p class="eyebrow">ARCHIPEL CHAT</p>
+          <h1>API ASSASSAINS</h1>
+          <p class="slogan">Nah We'd win</p>
+        </div>
       </div>
-
-      <div class="hero-text">
-        <p class="eyebrow">ARCHIPEL HACKATHON</p>
-        <h1>API ASSASSAINS</h1>
-        <p class="slogan">Nah We'd win</p>
-        <p class="subtitle">
-          Réseau P2P chiffré sans Internet: découverte locale, tunnel sécurisé, transfert de fichiers par chunks.
-        </p>
-        <div class="meta" id="meta"></div>
-      </div>
+      <div class="connection" id="connectionState">Connexion: ...</div>
     </header>
 
-    <main class="grid">
-      <section class="card" id="statusCard">
-        <h2>État du nœud</h2>
-        <pre id="statusOut">Chargement...</pre>
-      </section>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Contacts</h2>
+          <div class="my-node-tools">
+            <div class="small mono" id="meNode">Mon node: ...</div>
+            <div class="row tight">
+              <button id="copyMyIdBtn" type="button">Copier mon ID</button>
+              <button id="pastePeerBtn" type="button" class="ghost">Coller ID</button>
+            </div>
+          </div>
+          <div id="peerList" class="peer-list"></div>
+        </section>
 
-      <section class="card" id="peersCard">
-        <h2>Pairs découverts</h2>
-        <pre id="peersOut"></pre>
-      </section>
+        <section class="panel">
+          <h2>Fichiers reçus/disponibles</h2>
+          <div id="fileList" class="file-list"></div>
+        </section>
+      </aside>
 
-      <section class="card">
-        <h2>Message chiffré</h2>
-        <form id="msgForm" class="stack">
-          <input name="nodeId" placeholder="node_id destinataire" required />
-          <textarea name="text" placeholder="Message à envoyer" required></textarea>
+      <section class="chat-shell">
+        <div class="chat-head">
+          <div>
+            <div class="small">Destinataire actuel</div>
+            <div id="chatPeerTitle" class="chat-peer-title">Aucun pair sélectionné</div>
+          </div>
+          <div class="head-actions">
+            <input id="manualPeerInput" placeholder="Coller node_id ici" />
+            <button id="usePeerBtn" type="button">Utiliser</button>
+            <button id="trustBtn" type="button">Trust</button>
+            <button id="notifBtn" type="button">Notifications</button>
+          </div>
+        </div>
+
+        <div id="messageList" class="message-list"></div>
+
+        <form id="msgForm" class="composer">
+          <input id="msgInput" placeholder="Écrire un message..." autocomplete="off" required />
           <button type="submit">Envoyer</button>
         </form>
       </section>
-
-      <section class="card">
-        <h2>Envoi de fichier</h2>
-        <form id="sendForm" class="stack">
-          <input name="nodeId" placeholder="node_id destinataire" required />
-          <input name="filePath" placeholder="/chemin/vers/fichier" required />
-          <button type="submit">Partager (Manifest)</button>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>Téléchargement</h2>
-        <form id="downloadForm" class="stack">
-          <input name="fileId" placeholder="file_id" required />
-          <button type="submit">Télécharger</button>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>Web of Trust</h2>
-        <form id="trustForm" class="stack">
-          <input name="nodeId" placeholder="node_id à approuver" required />
-          <button type="submit">Marquer trusted</button>
-        </form>
-      </section>
-
-      <section class="card wide">
-        <h2>Fichiers connus</h2>
-        <pre id="filesOut"></pre>
-      </section>
-
-      <section class="card wide">
-        <h2>Journal runtime</h2>
-        <pre id="eventsOut"></pre>
-      </section>
     </main>
+
+    <button id="docFab" class="doc-fab" type="button">Envoyer document</button>
+
+    <div id="docModal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Envoi de document</h3>
+        <form id="sendForm" class="stack">
+          <input id="docTargetInput" name="nodeId" placeholder="node_id destinataire" required />
+          <input id="docPathInput" name="filePath" placeholder="/chemin/vers/fichier" required />
+          <div class="row">
+            <button type="submit">Partager</button>
+            <button id="closeModalBtn" type="button" class="ghost">Fermer</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <div class="toast" id="toast"></div>
 

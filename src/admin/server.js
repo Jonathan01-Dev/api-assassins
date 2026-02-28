@@ -64,11 +64,48 @@ function createAdminServer(node, opts = {}) {
   const host = opts.host || "127.0.0.1";
   const webDir = path.resolve(opts.webDir || path.join(process.cwd(), "apps", "web"));
 
+  const buildSnapshot = () => ({
+    status: node.getStatus(),
+    peers: node.getPeers(),
+    messages: node.getMessages(300),
+    files: node.listAvailableFiles(),
+    events: node.getEvents(120),
+    ts: Date.now(),
+  });
+
   const server = http.createServer(async (req, res) => {
     try {
       const u = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
       if (u.pathname.startsWith("/api/")) {
+        if (req.method === "GET" && u.pathname === "/api/stream") {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-store",
+            Connection: "keep-alive",
+          });
+
+          const sendSnapshot = () => {
+            const payload = JSON.stringify(buildSnapshot());
+            res.write(`event: snapshot\ndata: ${payload}\n\n`);
+          };
+
+          sendSnapshot();
+          const interval = setInterval(sendSnapshot, 2500);
+          const heartbeat = setInterval(() => res.write(": ping\n\n"), 15000);
+
+          req.on("close", () => {
+            clearInterval(interval);
+            clearInterval(heartbeat);
+          });
+
+          return;
+        }
+
+        if (req.method === "GET" && u.pathname === "/api/snapshot") {
+          return json(res, 200, { ok: true, data: buildSnapshot() });
+        }
+
         if (req.method === "GET" && u.pathname === "/api/status") {
           return json(res, 200, { ok: true, data: node.getStatus() });
         }
@@ -79,7 +116,14 @@ function createAdminServer(node, opts = {}) {
 
         if (req.method === "GET" && u.pathname === "/api/messages") {
           const limit = Number(u.searchParams.get("limit") || 100);
-          return json(res, 200, { ok: true, data: node.getMessages(limit) });
+          const peer = String(u.searchParams.get("peer") || "").trim().toLowerCase();
+          let messages = node.getMessages(limit);
+
+          if (peer) {
+            messages = messages.filter((m) => String(m.from || "").toLowerCase() === peer || String(m.to || "").toLowerCase() === peer);
+          }
+
+          return json(res, 200, { ok: true, data: messages });
         }
 
         if (req.method === "GET" && u.pathname === "/api/files") {
