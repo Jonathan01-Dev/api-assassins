@@ -1,74 +1,114 @@
-# Archipel Hackathon
-TITRE : ARCHIPEL - Secure P2P Offline Network
+# Archipel - Secure Offline P2P
 
-DESCRIPTION 
-Archipel is a decentralised peer-to-peer system designed to work without connectivity as long as the hosts are in the same network.
-Nodes automaticaly discover each other on the local network using UDP multicast and communicate via TCP connections. 
+Implémentation complète du protocole Archipel en Node.js:
+- découverte P2P sans Internet (UDP multicast)
+- tunnel chiffré pair-à-pair (X25519 + XChaCha20-Poly1305)
+- authentification sans CA (TOFU / Web of Trust)
+- messages chiffrés
+- transfert fichiers par chunks avec vérification SHA-256
+- CLI opérationnelle + site web local de supervision
 
+## 1) Architecture
 
-TECHNOLOGY STACK
-- Node.js
--  UDP(User Datagram Protocol) Multicast (Peer Discovery)
-- TCP (Node-to-Node commuication)
-- libsodium (for cryptography) 
-- Native Node.js modules (net, dgram, crypto)
+Chaque nœud exécute:
+- un serveur TCP (données chiffrées)
+- un module de découverte UDP multicast
+- une table de pairs + réputation
+- un moteur de transfert par chunks
+- une API locale HTTP + dashboard web
 
-ARCHITECTURE
-+-------------------+
-    |      Node A       |
-    |-------------------|
-    | TCP Server        |
-    | UDP Discovery     |
-    | Peer Table        |
-    +-------------------+
-             ↑
-             |  UDP Multicast (HELLO)
-             ↓
-    +-------------------+
-    |      Node B       |
-    |-------------------|
-    | TCP Server        |
-    | UDP Discovery     |
-    | Peer Table        |
-    +-------------------+
+```
+Node A <--- UDP HELLO ---> Node B
+Node A <=== TCP chiffré ===> Node B
+```
 
+## 2) Cryptographie utilisée
 
-PACKET FORMAT (Protocol v1)
-Each network message follows this structure :
-| Field        | Size      | Description |
-|-------------|-----------|-------------|
-| MAGIC       | 4 bytes   | Protocol identifier |
-| TYPE        | 1 byte    | Message type |
-| NODE_ID     | 32 bytes  | Unique node identifier |
-| PAYLOAD_LEN | 4 bytes   | Payload length |
-| PAYLOAD     | Variable  | Encrypted data |
-| HMAC        | 32 bytes  | Integrity check |
+- Identité nœud: Ed25519
+- Échange de clés de session: X25519 (ephemeral)
+- Chiffrement transport: XChaCha20-Poly1305
+- Intégrité paquet Archipel: HMAC-SHA256
+- Intégrité chunks/fichiers: SHA-256
 
+## 3) Installation
 
-MESSAGE TYPES
-- 0x01 HELLO
-- 0x02 PEER_LIST
-- 0x03 MSG
-- 0x04 CHUNK_REQ
-- 0x05 CHUNK_DATA
-- 0x06 MANIFEST
-- 0x07 ACK
+```bash
+cd /home/vianekisdead/api-assassins
+npm install
+```
 
+## 4) Démarrer un nœud
 
-HOW TO RUN (Sprint 1)
-Install dependencies:
-- npm install
-- Run three nodes in separate terminals:
-- Terminal 1:
-set TCP_PORT=7777 && node src/index.js
-- Terminal 2:
-set TCP_PORT=7778 && node src/index.js
-- Terminal 3:
-set TCP_PORT=7779 && node src/index.js
+```bash
+node src/cli.js start --port 7777 --admin-port 8787
+```
 
+Dashboard web:
+- http://127.0.0.1:8787
 
-CURRENT STATUS (End of Sprint )
-- UDP multicast peer discovery implemented
-- Dynamic peer table with timeout
-- TCP server operational
-- Multi-node local testing validated
+Par défaut, les données du nœud sont stockées dans:
+- `.archipel/node-<port>`
+
+## 5) Commandes CLI (alignées Sprint 4)
+
+```bash
+node src/cli.js status --admin-port 8787
+node src/cli.js peers --admin-port 8787
+node src/cli.js msg <node_id> "Hello" --admin-port 8787
+node src/cli.js send <node_id> /tmp/fichier.bin --admin-port 8787
+node src/cli.js receive --admin-port 8787
+node src/cli.js download <file_id> --admin-port 8787
+node src/cli.js trust <node_id> --admin-port 8787
+node src/cli.js stop --admin-port 8787
+```
+
+## 6) Démo rapide (2 nœuds)
+
+Terminal A:
+```bash
+node src/cli.js start --port 7777 --admin-port 8787 --data-dir /tmp/arch-a
+```
+
+Terminal B:
+```bash
+node src/cli.js start --port 7778 --admin-port 8788 --data-dir /tmp/arch-b
+```
+
+Puis:
+```bash
+node src/cli.js status --admin-port 8787
+node src/cli.js status --admin-port 8788
+node src/cli.js peers --admin-port 8787
+```
+
+Envoyer message A -> B:
+```bash
+node src/cli.js msg <NODE_ID_B> "salut" --admin-port 8787
+```
+
+Envoyer fichier A -> B:
+```bash
+node src/cli.js send <NODE_ID_B> /tmp/arch-e2e.bin --admin-port 8787
+node src/cli.js receive --admin-port 8788
+node src/cli.js download <FILE_ID> --admin-port 8788
+```
+
+## 7) Structure projet
+
+```
+src/
+  protocol/      format paquet Archipel v1
+  crypto/        identité + key exchange + AEAD
+  network/       discovery multicast + frames + secure channel
+  node/          runtime principal du nœud
+  admin/         API locale HTTP
+  cli.js         commandes utilisateur
+apps/web/        site web local (dashboard + actions)
+```
+
+## 8) Notes importantes
+
+- Pas de serveur central.
+- Fonctionne en LAN local sans Internet.
+- Gemini API non intégrée ici (mode 100% offline).
+- Pour lancer plusieurs nœuds sur la même machine: utiliser des `--data-dir` et ports différents.

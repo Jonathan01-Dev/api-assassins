@@ -1,18 +1,17 @@
-// src/network/discovery.js
 const dgram = require("dgram");
 
 const DEFAULT_MCAST_ADDR = "239.255.42.99";
 const DEFAULT_UDP_PORT = 6000;
 
 /**
- * Démarre la découverte via UDP multicast.
  * @param {{
  *  nodeId: string,
  *  tcpPort: number,
  *  udpPort?: number,
  *  multicastAddr?: string,
  *  helloIntervalMs?: number,
- *  onHello?: (peer: { nodeId: string, ip: string, tcpPort: number, ts: number }) => void
+ *  getHelloExtra?: ()=>Record<string, unknown>,
+ *  onHello?: (peer: { nodeId: string, ip: string, tcpPort: number, ts: number, sharedFiles: string[] }) => void
  * }} opts
  */
 function startDiscovery(opts) {
@@ -22,6 +21,7 @@ function startDiscovery(opts) {
     udpPort = DEFAULT_UDP_PORT,
     multicastAddr = DEFAULT_MCAST_ADDR,
     helloIntervalMs = 30000,
+    getHelloExtra,
     onHello,
   } = opts;
 
@@ -35,24 +35,23 @@ function startDiscovery(opts) {
     try {
       const data = JSON.parse(msg.toString("utf8"));
 
-      // On ne se traite pas soi-même
+      if (!data || data.type !== "HELLO") return;
       if (data.nodeId === nodeId) return;
+      if (typeof data.tcpPort !== "number") return;
 
-      if (data.type === "HELLO" && typeof data.tcpPort === "number") {
-        const peer = {
-          nodeId: String(data.nodeId),
-          ip: rinfo.address,
-          tcpPort: data.tcpPort,
-          ts: Number(data.ts || Date.now()),
-        };
+      const peer = {
+        nodeId: String(data.nodeId),
+        ip: rinfo.address,
+        tcpPort: Number(data.tcpPort),
+        ts: Number(data.ts || Date.now()),
+        sharedFiles: Array.isArray(data.sharedFiles)
+          ? data.sharedFiles.map(String)
+          : [],
+      };
 
-        // Log simple
-        console.log(`[UDP] HELLO received from ${peer.ip}:${peer.tcpPort} (${peer.nodeId.slice(0, 10)}...)`);
-
-        if (onHello) onHello(peer);
-      }
-    } catch (e) {
-      // Ignore messages non-JSON
+      if (onHello) onHello(peer);
+    } catch (_) {
+      // ignore invalid packets
     }
   });
 
@@ -68,23 +67,21 @@ function startDiscovery(opts) {
   });
 
   function sendHello() {
-    const payload = Buffer.from(
-      JSON.stringify({
-        type: "HELLO",
-        nodeId,
-        tcpPort,
-        ts: Date.now(),
-      }),
-      "utf8"
-    );
+    const payloadObj = {
+      type: "HELLO",
+      nodeId,
+      tcpPort,
+      ts: Date.now(),
+      ...(typeof getHelloExtra === "function" ? getHelloExtra() : {}),
+    };
+
+    const payload = Buffer.from(JSON.stringify(payloadObj), "utf8");
 
     socket.send(payload, 0, payload.length, udpPort, multicastAddr, (err) => {
       if (err) console.log(`[UDP] send error: ${err.message}`);
-      else console.log(`[UDP] HELLO sent (tcpPort=${tcpPort})`);
     });
   }
 
-  // Envoi immédiat + intervalle
   sendHello();
   const timer = setInterval(sendHello, helloIntervalMs);
 
@@ -96,7 +93,7 @@ function startDiscovery(opts) {
     socket.close();
   }
 
-  return { stop };
+  return { stop, sendHelloNow: sendHello };
 }
 
-module.exports = { startDiscovery };
+module.exports = { startDiscovery, DEFAULT_MCAST_ADDR, DEFAULT_UDP_PORT };

@@ -1,56 +1,89 @@
-// src/network/peerTable.js
+class PeerTable {
+  constructor() {
+    this.peers = new Map();
+  }
 
-// Peer Table en mémoire (Map) : nodeId -> { nodeId, ip, tcpPort, lastSeen }
-const peers = new Map();
+  upsertPeer(peer) {
+    const now = Date.now();
+    const existing = this.peers.get(peer.nodeId);
 
-/**
- * Ajoute ou met à jour un peer.
- * @param {{ nodeId: string, ip: string, tcpPort: number, lastSeen?: number }} peer
- */
-function upsertPeer(peer) {
-  const now = Date.now();
-  const existing = peers.get(peer.nodeId);
+    this.peers.set(peer.nodeId, {
+      nodeId: peer.nodeId,
+      ip: peer.ip,
+      tcpPort: Number(peer.tcpPort),
+      lastSeen: Number(peer.lastSeen ?? now),
+      firstSeen: existing?.firstSeen ?? now,
+      sharedFiles: Array.isArray(peer.sharedFiles)
+        ? Array.from(new Set(peer.sharedFiles.map(String)))
+        : (existing?.sharedFiles || []),
+      reputation: Number.isFinite(peer.reputation)
+        ? Number(peer.reputation)
+        : (existing?.reputation ?? 1),
+      trusted: peer.trusted ?? existing?.trusted ?? false,
+    });
+  }
 
-  peers.set(peer.nodeId, {
-    nodeId: peer.nodeId,
-    ip: peer.ip,
-    tcpPort: peer.tcpPort,
-    lastSeen: peer.lastSeen ?? now,
-    firstSeen: existing?.firstSeen ?? now,
-  });
-}
+  getPeer(nodeId) {
+    return this.peers.get(nodeId);
+  }
 
-/** Retourne la liste des peers */
-function getPeers() {
-  return Array.from(peers.values());
-}
+  getPeers() {
+    return Array.from(this.peers.values()).sort((a, b) => b.lastSeen - a.lastSeen);
+  }
 
-/**
- * Supprime les peers inactifs.
- * @param {number} timeoutMs ex: 90000 (90s)
- */
-function pruneExpiredPeers(timeoutMs) {
-  const now = Date.now();
-  for (const [nodeId, p] of peers.entries()) {
-    if (now - p.lastSeen > timeoutMs) {
-      peers.delete(nodeId);
+  getPeersWithFile(fileId) {
+    return this.getPeers().filter((p) => (p.sharedFiles || []).includes(fileId));
+  }
+
+  markSharedFile(nodeId, fileId) {
+    const p = this.peers.get(nodeId);
+    if (!p) return;
+    const set = new Set(p.sharedFiles || []);
+    set.add(fileId);
+    p.sharedFiles = Array.from(set);
+    this.peers.set(nodeId, p);
+  }
+
+  updateReputation(nodeId, ok) {
+    const p = this.peers.get(nodeId);
+    if (!p) return;
+    const delta = ok ? 0.05 : -0.2;
+    p.reputation = Math.max(0, Math.min(5, Number((p.reputation + delta).toFixed(2))));
+    this.peers.set(nodeId, p);
+  }
+
+  pruneExpiredPeers(timeoutMs) {
+    const now = Date.now();
+    for (const [nodeId, p] of this.peers.entries()) {
+      if (now - p.lastSeen > timeoutMs) {
+        this.peers.delete(nodeId);
+      }
     }
+  }
+
+  asSerializable() {
+    return this.getPeers();
+  }
+
+  hydrate(rows) {
+    this.peers.clear();
+    for (const p of rows || []) {
+      if (p && p.nodeId) this.upsertPeer(p);
+    }
+  }
+
+  formatPeers() {
+    const list = this.getPeers();
+    if (list.length === 0) return "Peers: (0)";
+
+    const lines = list.map((p) => {
+      const trust = p.trusted ? "trusted" : "tofu";
+      const shared = p.sharedFiles?.length || 0;
+      return `- ${p.nodeId.slice(0, 10)}... ${p.ip}:${p.tcpPort} trust=${trust} files=${shared} rep=${p.reputation}`;
+    });
+
+    return `Peers: (${list.length})\n${lines.join("\n")}`;
   }
 }
 
-/** Petit affichage lisible en console */
-function formatPeers() {
-  const list = getPeers();
-  if (list.length === 0) return "Peers: (0)";
-  const lines = list.map(
-    (p) => `- ${p.nodeId.slice(0, 10)}…  ${p.ip}:${p.tcpPort}  lastSeen=${new Date(p.lastSeen).toLocaleTimeString()}`
-  );
-  return `Peers: (${list.length})\n` + lines.join("\n");
-}
-
-module.exports = {
-  upsertPeer,
-  getPeers,
-  pruneExpiredPeers,
-  formatPeers,
-};
+module.exports = { PeerTable };
