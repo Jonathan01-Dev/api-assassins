@@ -20,5 +20,8 @@
   "homepage": "https://github.com/NtiecheVianel/api-assassins#readme",
   "dependencies": {
     "libsodium-wrappers": "^0.8.2"
+  },
+  "devDependencies": {
+    "electron": "^40.6.1"
   }
 }
