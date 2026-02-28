@@ -1,19 +1,24 @@
 {
   "name": "api-assassins",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Archipel secure offline P2P network",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "bin": {
+    "archipel": "src/cli.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/cli.js start",
+    "archipel": "node src/cli.js",
+    "test:frame": "node scripts/frame_test.js",
+    "test:crypto": "node test-crypto.js",
+    "test": "npm run test:frame && npm run test:crypto"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/NtiecheVianel/api-assassins.git"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/NtiecheVianel/api-assassins/issues"
   },

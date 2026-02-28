@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API ASSASSAINS - Archipel Control</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+
+    <header class="hero">
+      <div class="hero-media">
+        <img class="brand-logo" src="/assets/apiassassains.png" alt="Logo API Assassains" />
+        <img class="brand-ring" src="/assets/apiassassains.jpg" alt="Artwork API Assassains" />
+      </div>
+
+      <div class="hero-text">
+        <p class="eyebrow">ARCHIPEL HACKATHON</p>
+        <h1>API ASSASSAINS</h1>
+        <p class="slogan">Nah We'd win</p>
+        <p class="subtitle">
+          Réseau P2P chiffré sans Internet: découverte locale, tunnel sécurisé, transfert de fichiers par chunks.
+        </p>
+        <div class="meta" id="meta"></div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card" id="statusCard">
+        <h2>État du nœud</h2>
+        <pre id="statusOut">Chargement...</pre>
+      </section>
+
+      <section class="card" id="peersCard">
+        <h2>Pairs découverts</h2>
+        <pre id="peersOut"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Message chiffré</h2>
+        <form id="msgForm" class="stack">
+          <input name="nodeId" placeholder="node_id destinataire" required />
+          <textarea name="text" placeholder="Message à envoyer" required></textarea>
+          <button type="submit">Envoyer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Envoi de fichier</h2>
+        <form id="sendForm" class="stack">
+          <input name="nodeId" placeholder="node_id destinataire" required />
+          <input name="filePath" placeholder="/chemin/vers/fichier" required />
+          <button type="submit">Partager (Manifest)</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Téléchargement</h2>
+        <form id="downloadForm" class="stack">
+          <input name="fileId" placeholder="file_id" required />
+          <button type="submit">Télécharger</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Web of Trust</h2>
+        <form id="trustForm" class="stack">
+          <input name="nodeId" placeholder="node_id à approuver" required />
+          <button type="submit">Marquer trusted</button>
+        </form>
+      </section>
+
+      <section class="card wide">
+        <h2>Fichiers connus</h2>
+        <pre id="filesOut"></pre>
+      </section>
+
+      <section class="card wide">
+        <h2>Journal runtime</h2>
+        <pre id="eventsOut"></pre>
+      </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

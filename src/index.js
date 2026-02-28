@@ -1,42 +1,39 @@
-// src/index.js
-const { startTcpServer } = require("./network/tcpServer");
-const { startDiscovery } = require("./network/discovery");
-const peerTable = require("./network/peerTable");
-const { loadOrCreateIdentity, nodeIdFromPublicKey } = require("./crypto/identity");
+const path = require("path");
 
-// Config simple (env > défaut)
-const TCP_PORT = Number(process.env.TCP_PORT || 7777);
-const PEER_TIMEOUT_MS = Number(process.env.PEER_TIMEOUT_MS || 90000);
+const { ArchipelNode } = require("./node/archipelNode");
+const { createAdminServer } = require("./admin/server");
 
 (async () => {
-  // Identité stable (Sprint 2)
-  const { publicKey } = await loadOrCreateIdentity();
-  const nodeId = nodeIdFromPublicKey(publicKey);
+  const tcpPort = Number(process.env.TCP_PORT || 7777);
+  const adminPort = Number(process.env.ADMIN_PORT || 8787);
+  const udpPort = Number(process.env.UDP_PORT || 6000);
+  const dataDir = path.resolve(process.env.ARCHIPEL_DATA_DIR || path.join(process.cwd(), ".archipel", `node-${tcpPort}`));
 
-  console.log(`\n=== Archipel Node ===`);
-  console.log(`nodeId=${nodeId.slice(0, 24)}...`); // affichage court
-  console.log(`TCP_PORT=${TCP_PORT}\n`);
-
-  // 1) TCP server
-  startTcpServer({ port: TCP_PORT });
-
-  // 2) UDP discovery -> met à jour la peer table
-  startDiscovery({
-    nodeId,
-    tcpPort: TCP_PORT,
-    onHello: (peer) => {
-      peerTable.upsertPeer({
-        nodeId: peer.nodeId,
-        ip: peer.ip,
-        tcpPort: peer.tcpPort,
-        lastSeen: Date.now(),
-      });
-    },
+  const node = new ArchipelNode({
+    tcpPort,
+    udpPort,
+    dataDir,
+    multicastAddr: process.env.MULTICAST_ADDR || "239.255.42.99",
   });
 
-  // 3) Affichage périodique
-  setInterval(() => {
-    peerTable.pruneExpiredPeers(PEER_TIMEOUT_MS);
-    console.log(peerTable.formatPeers());
-  }, 5000);
+  await node.start();
+
+  const admin = createAdminServer(node, {
+    adminPort,
+    host: process.env.ADMIN_HOST || "127.0.0.1",
+    webDir: path.join(process.cwd(), "apps", "web"),
+  });
+  await admin.start();
+
+  console.log(`[ARCHIPEL] running: tcp=${tcpPort}, admin=http://127.0.0.1:${adminPort}`);
+
+  async function shutdown() {
+    console.log("[ARCHIPEL] shutdown requested");
+    await admin.stop().catch(() => {});
+    await node.stop().catch(() => {});
+    process.exit(0);
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 })();
