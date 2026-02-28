@@ -12,7 +12,10 @@
     "archipel": "node src/cli.js",
     "test:frame": "node scripts/frame_test.js",
     "test:crypto": "node test-crypto.js",
-    "test": "npm run test:frame && npm run test:crypto"
+    "test": "npm run test:frame && npm run test:crypto",
+    "team:sync:once": "bash scripts/team-autosync.sh --once --run-tests",
+    "team:autosync": "bash scripts/team-autosync.sh --interval 30",
+    "team:autosync:test": "bash scripts/team-autosync.sh --interval 30 --run-tests"
   },
   "repository": {
     "type": "git",

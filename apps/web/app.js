@@ -136,6 +136,13 @@ function resolvePeer(nodeIdInput) {
   return state.peers.find((p) => p.nodeId === nodeId || p.nodeId.startsWith(nodeId)) || null;
 }
 
+function connectedSelectedPeerId() {
+  const selected = normalizeNodeInput(state.selectedPeer);
+  if (!selected) return null;
+  const peer = resolvePeer(selected);
+  return peer ? peer.nodeId : null;
+}
+
 function isPeerActive(peer) {
   return Date.now() - Number(peer?.lastSeen || 0) <= 45_000;
 }
@@ -464,6 +471,7 @@ function renderTrust() {
 }
 
 function renderAll() {
+  syncDocTargetLock();
   renderPills();
   renderDashboard();
   renderPeersTable();
@@ -603,7 +611,11 @@ async function generateAiDraft(userPrompt = "") {
 }
 
 function openDocModal() {
-  docTargetInput.value = selectedPeer() || "";
+  const lockedNodeId = connectedSelectedPeerId();
+  if (lockedNodeId) {
+    docTargetInput.value = lockedNodeId;
+  }
+  syncDocTargetLock();
   docFileInput.value = "";
   docPathInput.value = "";
   docModal.classList.remove("hidden");
@@ -611,6 +623,19 @@ function openDocModal() {
 
 function closeDocModal() {
   docModal.classList.add("hidden");
+}
+
+function syncDocTargetLock() {
+  const lockedNodeId = connectedSelectedPeerId();
+  if (lockedNodeId) {
+    docTargetInput.value = lockedNodeId;
+    docTargetInput.readOnly = true;
+    docTargetInput.title = "node_id verrouillé: pair déjà sélectionné";
+    return;
+  }
+
+  docTargetInput.readOnly = false;
+  docTargetInput.title = "";
 }
 
 function bindUi() {
@@ -745,7 +770,8 @@ function bindUi() {
 
   sendForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const nodeId = normalizeNodeInput(docTargetInput.value);
+    const lockedNodeId = connectedSelectedPeerId();
+    const nodeId = normalizeNodeInput(lockedNodeId || docTargetInput.value);
     const file = docFileInput.files && docFileInput.files[0] ? docFileInput.files[0] : null;
     const filePath = String(docPathInput.value || "").trim();
 

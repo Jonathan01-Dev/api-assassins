@@ -37,6 +37,32 @@ cd /home/vianekisdead/api-assassins
 npm install
 ```
 
+## 3.1) Workflow équipe (commits/push structurés)
+
+Pour synchroniser souvent sans faire de faux commits:
+
+```bash
+# une seule tentative (test + commit/push si changements)
+npm run team:sync:once
+
+# boucle auto toutes les 30 secondes (commit/push seulement si changements)
+npm run team:autosync
+
+# boucle auto + tests avant chaque commit
+npm run team:autosync:test
+```
+
+Options avancées:
+
+```bash
+bash scripts/team-autosync.sh --interval 45 --run-tests --branch main --remote origin
+```
+
+Le script:
+- ne commit/push que s'il y a de vrais changements
+- fait `git pull --rebase --autostash` avant commit
+- saute le push si les tests échouent (mode `--run-tests`)
+
 ## 4) Démarrer un nœud
 
 ```bash
@@ -124,6 +150,13 @@ Configurer la clé API dans l'environnement:
 ```bash
 export GEMINI_API_KEY="ta_cle_api"
 export GEMINI_MODEL="gemini-2.0-flash"
+```
+
+Ou via fichier local `.env` (chargé automatiquement par `src/cli.js` et `src/index.js`):
+
+```bash
+GEMINI_API_KEY=ta_cle_api
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
 Puis démarrer le nœud:

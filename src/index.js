@@ -1,4 +1,7 @@
 const path = require("path");
+const { loadEnvFile } = require("./utils/loadEnv");
+
+loadEnvFile();
 
 const { ArchipelNode } = require("./node/archipelNode");
 const { createAdminServer } = require("./admin/server");
