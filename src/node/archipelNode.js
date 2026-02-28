@@ -493,23 +493,41 @@ class ArchipelNode {
   }
 
   _resolvePeerNodeId(nodeIdInput) {
-    const cleaned = String(nodeIdInput || "")
+    const peers = this.peerTable.getPeers();
+    if (!peers.length) {
+      throw new Error("node_id introuvable: aucun peer détecté (vérifie le réseau et /api/peers)");
+    }
+
+    const raw = String(nodeIdInput || "")
       .trim()
       .toLowerCase()
       .replace(/\s+/g, "");
 
-    if (!cleaned) throw new Error("node_id vide");
+    if (!raw) throw new Error("node_id vide");
+
+    // Support format abrégé copié depuis l'UI: abcd1234...ef90
+    const shortParts = raw.split(/\.{3}|…/).filter(Boolean);
+    if (shortParts.length === 2) {
+      const start = shortParts[0].replace(/[^0-9a-f]/g, "");
+      const end = shortParts[1].replace(/[^0-9a-f]/g, "");
+
+      const shortMatches = peers.filter((p) => p.nodeId.startsWith(start) && p.nodeId.endsWith(end));
+      if (shortMatches.length === 1) return shortMatches[0].nodeId;
+      if (shortMatches.length > 1) throw new Error("node_id ambigu (format abrégé correspond à plusieurs peers)");
+    }
+
+    // Nettoie les caractères non-hexa éventuels (guillemets, ponctuation, etc.).
+    const cleaned = raw.replace(/[^0-9a-f]/g, "");
+    if (!cleaned) throw new Error("node_id invalide");
 
     const exact = this.peerTable.getPeer(cleaned);
     if (exact) return exact.nodeId;
 
-    const peers = this.peerTable.getPeers();
-    const matches = peers.filter((p) => p.nodeId.startsWith(cleaned));
+    const prefixMatches = peers.filter((p) => p.nodeId.startsWith(cleaned));
+    if (prefixMatches.length === 1) return prefixMatches[0].nodeId;
+    if (prefixMatches.length > 1) throw new Error("node_id ambigu (plusieurs peers)");
 
-    if (matches.length === 1) return matches[0].nodeId;
-    if (matches.length > 1) throw new Error("node_id ambigu (plusieurs peers)");
-
-    throw new Error("node_id introuvable dans les peers");
+    throw new Error(`node_id introuvable dans les peers: ${cleaned.slice(0, 16)}...`);
   }
 
   _ackPacket(payload) {
