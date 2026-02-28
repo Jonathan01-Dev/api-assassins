@@ -14,6 +14,27 @@ function encodeFrame(type, payload) {
   return Buffer.concat([header, body]);
 }
 
+/**
+ * Décode UNE frame complète (buffer doit contenir exactement 1 frame complète)
+ * @param {Buffer} buf
+ * @returns {{ type:number, payload:Buffer }}
+ */
+function decodeSingleFrame(buf) {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  if (b.length < 5) throw new Error("decodeSingleFrame: too small");
+
+  const type = b.readUInt8(0);
+  const len = b.readUInt32BE(1);
+
+  const frameSize = 5 + len;
+  if (b.length !== frameSize) {
+    throw new Error(`decodeSingleFrame: expected ${frameSize} bytes, got ${b.length}`);
+  }
+
+  const payload = b.subarray(5, frameSize);
+  return { type, payload };
+}
+
 class FrameDecoder {
   /**
    * @param {(type:number, payload:Buffer)=>void} onFrame
@@ -49,4 +70,4 @@ class FrameDecoder {
   }
 }
 
-module.exports = { encodeFrame, FrameDecoder };
+module.exports = { encodeFrame, decodeSingleFrame, FrameDecoder };

@@ -1,17 +1,20 @@
 // src/network/tcpServer.js
 const net = require("net");
 const sodium = require("libsodium-wrappers");
+
 const { createKxKeypair, deriveSessionKeys } = require("../crypto/handshake");
 const { encodeFrame, FrameDecoder } = require("./frame");
-
-// Types de frame (V1)
-const FT = {
-  JSON: 1, // payload = JSON string (utf8)
-  // plus tard: ENCRYPTED = 2
-};
+const {
+  FRAME_KX_PUB,
+  FRAME_ENCRYPTED,
+  MSG_PING,
+  MSG_PONG,
+  sealFrame,
+  openFrame,
+} = require("./secureChannel");
 
 /**
- * Démarre un serveur TCP + handshake (Sprint 2) en mode frames.
+ * Démarre un serveur TCP sécurisé (frames + X25519 + XChaCha20-Poly1305).
  * @param {{ port: number }} opts
  */
 function startTcpServer({ port }) {
@@ -21,80 +24,97 @@ function startTcpServer({ port }) {
     const remote = `${socket.remoteAddress}:${socket.remotePort}`;
     console.log(`[TCP] client connected: ${remote}`);
 
-    // 1) Génère notre paire X25519
+    // 1) Notre paire X25519
     const myKx = await createKxKeypair();
+
+    // 2) Session rx/tx après handshake
     let session = null;
 
-    // Utilitaire: envoyer un message JSON en frame
-    function sendJson(obj) {
-      const payload = Buffer.from(JSON.stringify(obj), "utf8");
-      socket.write(encodeFrame(FT.JSON, payload));
-    }
+    // 3) Timeout handshake (évite socket pendante)
+    const HANDSHAKE_TIMEOUT_MS = 10_000;
+    const handshakeTimer = setTimeout(() => {
+      if (!session) {
+        console.log(`[TCP] handshake timeout for ${remote} -> closing`);
+        socket.destroy();
+      }
+    }, HANDSHAKE_TIMEOUT_MS);
 
-    // 2) Envoie notre clé publique (KX_PUB) (en frame)
-    sendJson({
-      type: "KX_PUB",
-      publicKey: Buffer.from(myKx.publicKey).toString("base64"),
-    });
-
-    // 3) Decoder frames (gère TCP chunking)
+    // 4) Frame decoder
     const decoder = new FrameDecoder(async (type, payload) => {
       try {
-        if (type !== FT.JSON) {
-          console.log(`[TCP] unknown frame type=${type} from ${remote}`);
-          return;
-        }
+        // Tant que pas de session -> on accepte seulement KX_PUB
+        if (!session) {
+          if (type !== FRAME_KX_PUB) {
+            console.log(`[TCP] protocol violation (no session yet) from ${remote} -> closing`);
+            return socket.destroy();
+          }
 
-        const text = payload.toString("utf8");
-        let msg;
-        try {
-          msg = JSON.parse(text);
-        } catch {
-          console.log(`[TCP] invalid JSON frame from ${remote}`);
-          return;
-        }
+          if (payload.length !== 32) {
+            console.log(`[TCP] invalid KX_PUB length (${payload.length}) from ${remote} -> closing`);
+            return socket.destroy();
+          }
 
-        // 4) Handshake : réception de la clé publique distante
-        if (msg.type === "KX_PUB" && typeof msg.publicKey === "string") {
-          const theirPub = Buffer.from(msg.publicKey, "base64");
+          const theirPub = new Uint8Array(payload); // 32 bytes
 
-          // Sur un serveur, role = "server"
+          // Serveur = role "server"
           const keys = await deriveSessionKeys("server", myKx, theirPub);
-
           session = { rx: keys.rx, tx: keys.tx };
+
+          clearTimeout(handshakeTimer);
           console.log(`[TCP] 🔐 Session established with ${remote}`);
-          console.log(`[TCP] session keys ready (rx/tx)`);
           return;
         }
 
-        // 5) Ping/Pong simple après handshake
-        if (msg.type === "PING") {
-          sendJson({ type: "PONG" });
+        // Session OK -> on accepte seulement ENCRYPTED
+        if (type !== FRAME_ENCRYPTED) {
+          console.log(`[TCP] unexpected frame type=${type} after session from ${remote} (ignored)`);
           return;
         }
 
-        // Debug: log les autres messages
-        console.log(`[TCP] msg from ${remote}:`, msg);
+        // Déchiffre la frame interne
+        const inner = await openFrame(session.rx, payload); // { type, payload }
+        const innerType = inner.type;
+
+        if (innerType === MSG_PING) {
+          const msg = inner.payload.toString("utf8");
+          // Répond PONG dans le tunnel
+          const enc = await sealFrame(session.tx, MSG_PONG, msg);
+          socket.write(encodeFrame(FRAME_ENCRYPTED, enc));
+          return;
+        }
+
+        // Autres messages (pour plus tard)
+        console.log(`[TCP] inner msg type=${innerType} len=${inner.payload.length} from ${remote}`);
       } catch (err) {
-        console.log(`[TCP] handler error: ${err.message}`);
+        console.log(`[TCP] error handling frame from ${remote}: ${err.message}`);
+        socket.destroy();
       }
     });
+
+    // 5) Serveur envoie sa pubkey en frame (FRAME_KX_PUB)
+    socket.write(encodeFrame(FRAME_KX_PUB, Buffer.from(myKx.publicKey)));
 
     socket.on("data", (chunk) => {
       try {
         decoder.push(chunk);
       } catch (err) {
-        console.log(`[TCP] decoder error: ${err.message}`);
+        console.log(`[TCP] frame decode error from ${remote}: ${err.message}`);
         socket.destroy();
       }
     });
 
-    socket.on("close", () => console.log(`[TCP] client disconnected: ${remote}`));
-    socket.on("error", (err) => console.log(`[TCP] socket error: ${err.message}`));
+    socket.on("close", () => {
+      clearTimeout(handshakeTimer);
+      console.log(`[TCP] client disconnected: ${remote}`);
+    });
+
+    socket.on("error", (err) => {
+      clearTimeout(handshakeTimer);
+      console.log(`[TCP] socket error (${remote}): ${err.message}`);
+    });
   });
 
   server.on("error", (err) => console.log(`[TCP] server error: ${err.message}`));
-
   server.listen(port, () => console.log(`[TCP] listening on port ${port}`));
   return server;
 }
