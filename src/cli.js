@@ -37,6 +37,23 @@ function num(v, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function parseHostPort(input, fallbackPort = 7777) {
+  const raw = String(input || "").trim();
+  if (!raw) throw new Error("adresse vide (attendu: IP:PORT)");
+
+  const idx = raw.lastIndexOf(":");
+  if (idx <= 0 || idx === raw.length - 1) {
+    return { ip: raw, tcpPort: fallbackPort };
+  }
+
+  const ip = raw.slice(0, idx).trim();
+  const port = Number(raw.slice(idx + 1).trim());
+  if (!ip || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("adresse invalide (attendu: IP:PORT)");
+  }
+  return { ip, tcpPort: port };
+}
+
 function printHelp() {
   console.log(`
 Archipel CLI
@@ -44,6 +61,7 @@ Archipel CLI
 Commandes:
   archipel start --port 7777 --admin-port 8787 [--data-dir .archipel/node-7777]
   archipel peers [--admin-port 8787]
+  archipel peer-add <node_id> <ip:port> [--admin-port 8787]
   archipel status [--admin-port 8787]
   archipel msg <node_id> <message> [--admin-port 8787]
   archipel send <node_id> <filepath> [--admin-port 8787]
@@ -54,6 +72,7 @@ Commandes:
 
 Exemple:
   node src/cli.js start --port 7777 --admin-port 8787
+  node src/cli.js peer-add <node_id> 192.168.1.50:7777 --admin-port 8787
   node src/cli.js peers --admin-port 8787
 `);
 }
@@ -169,6 +188,22 @@ async function main() {
 
   if (command === "peers") {
     const out = await apiRequest({ adminPort, method: "GET", route: "/api/peers" });
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  if (command === "peer-add") {
+    const nodeId = args[1];
+    const addr = args[2];
+    if (!nodeId || !addr) throw new Error("usage: peer-add <node_id> <ip:port>");
+
+    const { ip, tcpPort } = parseHostPort(addr, 7777);
+    const out = await apiRequest({
+      adminPort,
+      method: "POST",
+      route: "/api/peer",
+      body: { nodeId, ip, tcpPort },
+    });
     console.log(JSON.stringify(out, null, 2));
     return;
   }

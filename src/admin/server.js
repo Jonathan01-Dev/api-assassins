@@ -159,6 +159,16 @@ function createAdminServer(node, opts = {}) {
           return json(res, 200, { ok: true, data });
         }
 
+        if (req.method === "POST" && u.pathname === "/api/peer") {
+          const body = await readBody(req);
+          const data = node.addPeer({
+            nodeId: String(body.nodeId || ""),
+            ip: String(body.ip || ""),
+            tcpPort: Number(body.tcpPort || 7777),
+          });
+          return json(res, 200, { ok: true, data });
+        }
+
         if (req.method === "POST" && u.pathname === "/api/stop") {
           setTimeout(() => {
             node.stop().catch(() => {});

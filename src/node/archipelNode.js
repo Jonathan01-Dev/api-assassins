@@ -254,6 +254,32 @@ class ArchipelNode {
     return this.trustStore[resolvedNodeId];
   }
 
+  addPeer({ nodeId, ip, tcpPort }) {
+    const raw = String(nodeId || "")
+      .trim()
+      .toLowerCase();
+    const full = (raw.match(/[0-9a-f]{64}/g) || [])[0] || "";
+    if (!full) throw new Error("node_id complet (64 hexa) requis");
+    if (full === this.nodeId) throw new Error("impossible d'ajouter son propre node_id");
+
+    const host = String(ip || "").trim();
+    if (!host) throw new Error("ip requise");
+
+    const port = Number(tcpPort || 7777);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error("tcpPort invalide");
+    }
+
+    this.peerTable.upsertPeer({
+      nodeId: full,
+      ip: host,
+      tcpPort: port,
+      lastSeen: Date.now(),
+    });
+    this._saveState();
+    return this.peerTable.getPeer(full);
+  }
+
   _createHandshakePayload(ephemeralPublicKey) {
     const ephB64 = Buffer.from(ephemeralPublicKey).toString("base64");
     const staticB64 = Buffer.from(this.identity.publicKey).toString("base64");

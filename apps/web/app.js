@@ -4,6 +4,9 @@ const messageListEl = document.getElementById("messageList");
 const meNodeEl = document.getElementById("meNode");
 const copyMyIdBtn = document.getElementById("copyMyIdBtn");
 const pastePeerBtn = document.getElementById("pastePeerBtn");
+const bootstrapNodeId = document.getElementById("bootstrapNodeId");
+const bootstrapAddr = document.getElementById("bootstrapAddr");
+const addPeerBtn = document.getElementById("addPeerBtn");
 const chatPeerTitleEl = document.getElementById("chatPeerTitle");
 const connectionStateEl = document.getElementById("connectionState");
 const manualPeerInput = document.getElementById("manualPeerInput");
@@ -343,6 +346,26 @@ function bindUi() {
       toast("node_id collé");
     } catch {
       toast("Collage impossible (permission clipboard)", true);
+    }
+  });
+
+  addPeerBtn.addEventListener("click", async () => {
+    const nodeId = normalizeNodeInput(bootstrapNodeId.value);
+    const addr = String(bootstrapAddr.value || "").trim();
+    if (!nodeId || !addr) return toast("node_id et IP:PORT requis", true);
+
+    const [ipRaw, portRaw] = addr.split(":");
+    const ip = String(ipRaw || "").trim();
+    const tcpPort = Number(portRaw || 7777);
+    if (!ip || !Number.isInteger(tcpPort)) return toast("Adresse invalide (IP:PORT)", true);
+
+    try {
+      await api("POST", "/api/peer", { nodeId, ip, tcpPort });
+      manualPeerInput.value = nodeId;
+      state.selectedPeer = nodeId;
+      toast("Peer ajouté manuellement");
+    } catch (err) {
+      toast(err.message, true);
     }
   });
 
