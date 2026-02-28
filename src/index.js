@@ -22,6 +22,7 @@ const { createAdminServer } = require("./admin/server");
     adminPort,
     host: process.env.ADMIN_HOST || "127.0.0.1",
     webDir: path.join(process.cwd(), "apps", "web"),
+    aiDisabled: String(process.env.ARCHIPEL_NO_AI || "").trim() === "1",
   });
   await admin.start();
 

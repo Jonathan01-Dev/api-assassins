@@ -59,12 +59,15 @@ function printHelp() {
 Archipel CLI
 
 Commandes:
-  archipel start --port 7777 --admin-port 8787 [--data-dir .archipel/node-7777]
+  archipel start --port 7777 --admin-port 8787 [--data-dir .archipel/node-7777] [--no-ai]
   archipel peers [--admin-port 8787]
   archipel peer-add <node_id> <ip:port> [--admin-port 8787]
   archipel status [--admin-port 8787]
   archipel msg <node_id> <message> [--admin-port 8787]
   archipel send <node_id> <filepath> [--admin-port 8787]
+  archipel ai <prompt> [--admin-port 8787]
+  archipel ai-status [--admin-port 8787]
+  archipel key-revoke [--admin-port 8787]
   archipel receive [--admin-port 8787]
   archipel download <file_id> [--admin-port 8787]
   archipel trust <node_id> [--admin-port 8787]
@@ -74,6 +77,7 @@ Exemple:
   node src/cli.js start --port 7777 --admin-port 8787
   node src/cli.js peer-add <node_id> 192.168.1.50:7777 --admin-port 8787
   node src/cli.js peers --admin-port 8787
+  node src/cli.js ai "propose une réponse simple"
 `);
 }
 
@@ -128,6 +132,8 @@ async function runStart(flags) {
   const dataDir = path.resolve(
     String(flags["data-dir"] || path.join(process.cwd(), ".archipel", `node-${tcpPort}`))
   );
+  const noAiRaw = flags["no-ai"];
+  const aiDisabled = noAiRaw === true || String(noAiRaw || "").toLowerCase() === "true";
 
   const node = new ArchipelNode({
     tcpPort,
@@ -145,12 +151,14 @@ async function runStart(flags) {
     adminPort,
     host: String(flags.host || "127.0.0.1"),
     webDir: path.join(process.cwd(), "apps", "web"),
+    aiDisabled,
   });
   await admin.start();
 
   console.log(`\n[ARCHIPEL] CLI/API ready on http://127.0.0.1:${adminPort}`);
   console.log(`[ARCHIPEL] Web dashboard: http://127.0.0.1:${adminPort}`);
   console.log(`[ARCHIPEL] Node TCP port: ${tcpPort} | UDP multicast: ${udpPort}`);
+  console.log(`[ARCHIPEL] AI mode: ${aiDisabled ? "disabled (--no-ai)" : "enabled"}`);
 
   const shutdown = async () => {
     console.log("\n[ARCHIPEL] stopping...");
@@ -210,6 +218,31 @@ async function main() {
 
   if (command === "receive") {
     const out = await apiRequest({ adminPort, method: "GET", route: "/api/files" });
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  if (command === "ai-status") {
+    const out = await apiRequest({ adminPort, method: "GET", route: "/api/ai/status" });
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  if (command === "ai") {
+    const prompt = args.slice(1).join(" ").trim();
+    if (!prompt) throw new Error('usage: ai "<prompt>"');
+    const out = await apiRequest({
+      adminPort,
+      method: "POST",
+      route: "/api/ai/generate",
+      body: { prompt },
+    });
+    console.log(String(out.text || ""));
+    return;
+  }
+
+  if (command === "key-revoke") {
+    const out = await apiRequest({ adminPort, method: "POST", route: "/api/security/revoke-key", body: {} });
     console.log(JSON.stringify(out, null, 2));
     return;
   }

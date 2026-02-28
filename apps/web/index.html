@@ -3,80 +3,206 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>API ASSASSAINS Chat</title>
+    <title>API Assassins | Archipel Node Console</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="backdrop"></div>
+    <div class="bg-layer"></div>
 
     <header class="topbar">
       <div class="brand-wrap">
         <img class="brand-logo" src="/assets/apiassassains.png" alt="API ASSASSAINS" />
         <div>
-          <p class="eyebrow">ARCHIPEL CHAT</p>
-          <h1>API ASSASSAINS</h1>
+          <p class="eyebrow">PROTOCOLE ARCHIPEL P2P CHIFFRÉ</p>
+          <h1>API ASSASSINS</h1>
           <p class="slogan">Nah We'd win</p>
         </div>
       </div>
-      <div class="connection" id="connectionState">Connexion: ...</div>
+      <div class="top-pills">
+        <span class="pill" id="connectionState">stream: reconnect</span>
+        <span class="pill" id="nodeStatusPill">node: offline</span>
+        <span class="pill" id="aiModePill">ai: --no-ai</span>
+      </div>
     </header>
 
-    <main class="app-shell">
-      <aside class="sidebar">
-        <section class="panel">
-          <h2>Contacts</h2>
-          <div class="my-node-tools">
-            <div class="small mono" id="meNode">Mon node: ...</div>
-            <div class="row tight">
-              <button id="copyMyIdBtn" type="button">Copier mon ID</button>
-              <button id="pastePeerBtn" type="button" class="ghost">Coller ID</button>
-            </div>
-            <div class="stack">
-              <input id="bootstrapNodeId" placeholder="node_id complet du pair" />
-              <input id="bootstrapAddr" placeholder="IP:PORT du pair (ex: 192.168.1.50:7777)" />
-              <button id="addPeerBtn" type="button">Ajouter peer manuellement</button>
-            </div>
+    <main class="layout">
+      <section class="panel dashboard">
+        <div class="section-head">
+          <h2>Dashboard du Nœud</h2>
+          <button id="copyMyIdBtn" type="button" class="ghost">Copier Node ID</button>
+        </div>
+        <div class="metric-grid">
+          <div class="metric">
+            <span class="label">Node ID (Ed25519)</span>
+            <span id="nodeIdValue" class="value mono">...</span>
           </div>
-          <div id="peerList" class="peer-list"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Fichiers reçus/disponibles</h2>
-          <div id="fileList" class="file-list"></div>
-        </section>
-      </aside>
-
-      <section class="chat-shell">
-        <div class="chat-head">
-          <div>
-            <div class="small">Destinataire actuel</div>
-            <div id="chatPeerTitle" class="chat-peer-title">Aucun pair sélectionné</div>
+          <div class="metric">
+            <span class="label">Statut</span>
+            <span id="statusValue" class="value">Hors ligne</span>
           </div>
-          <div class="head-actions">
-            <input id="manualPeerInput" placeholder="Coller node_id ici" />
-            <button id="usePeerBtn" type="button">Utiliser</button>
-            <button id="trustBtn" type="button">Trust</button>
-            <button id="notifBtn" type="button">Notifications</button>
+          <div class="metric">
+            <span class="label">Port TCP</span>
+            <span id="tcpPortValue" class="value mono">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">Pairs connectés</span>
+            <span id="peerCountValue" class="value">0</span>
+          </div>
+          <div class="metric">
+            <span class="label">Tunnel chiffré</span>
+            <span id="cipherValue" class="value good">Actif</span>
+          </div>
+          <div class="metric">
+            <span class="label">Transport</span>
+            <span id="cipherAlgoValue" class="value mono">XChaCha20-Poly1305</span>
+          </div>
+          <div class="metric">
+            <span class="label">Messages envoyés</span>
+            <span id="msgSentValue" class="value">0</span>
+          </div>
+          <div class="metric">
+            <span class="label">Messages reçus</span>
+            <span id="msgRecvValue" class="value">0</span>
+          </div>
+          <div class="metric">
+            <span class="label">Chunks transférés</span>
+            <span id="chunksValue" class="value">0</span>
+          </div>
+          <div class="metric">
+            <span class="label">Fichiers partagés</span>
+            <span id="filesSharedValue" class="value">0</span>
           </div>
         </div>
 
-        <div id="messageList" class="message-list"></div>
+        <div class="quick-tools">
+          <div class="tool-block">
+            <p class="tool-title">Bootstrap Pair</p>
+            <div class="row">
+              <input id="bootstrapNodeId" placeholder="node_id complet du pair" />
+              <input id="bootstrapAddr" placeholder="IP:PORT (ex: 192.168.1.50:7777)" />
+              <button id="addPeerBtn" type="button">Ajouter pair</button>
+            </div>
+          </div>
+          <div class="tool-block">
+            <p class="tool-title">Cible active</p>
+            <div class="row">
+              <input id="manualPeerInput" placeholder="Coller node_id" />
+              <button id="pastePeerBtn" type="button" class="ghost">Coller</button>
+              <button id="usePeerBtn" type="button">Utiliser</button>
+              <button id="trustBtn" type="button">Approuver ce pair</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        <form id="msgForm" class="composer">
-          <input id="msgInput" placeholder="Écrire un message..." autocomplete="off" required />
-          <button type="submit">Envoyer</button>
-        </form>
+      <section class="panel peers">
+        <div class="section-head">
+          <h2>Pairs - Table de routage P2P</h2>
+          <span class="chip">Network</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Node ID</th>
+                <th>IP locale</th>
+                <th>Port</th>
+                <th>Last HELLO</th>
+                <th>Réputation</th>
+                <th>Confiance</th>
+                <th>État</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="peerTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel messaging">
+        <div class="section-head">
+          <h2>Messagerie chiffrée</h2>
+          <div class="row">
+            <span class="chip secure">Message chiffré (transport sécurisé)</span>
+            <span class="chip">Signature Ed25519 vérifiable</span>
+          </div>
+        </div>
+        <div class="messaging-shell">
+          <aside class="conversation-list" id="conversationList"></aside>
+          <div class="chat-pane">
+            <div class="chat-head">
+              <div>
+                <div class="small">Conversation active</div>
+                <div id="chatPeerTitle" class="chat-peer-title">Aucun pair sélectionné</div>
+              </div>
+              <button id="notifBtn" type="button" class="ghost">Notifications</button>
+            </div>
+            <div id="messageList" class="message-list"></div>
+            <form id="msgForm" class="composer">
+              <input id="msgInput" placeholder="Écrire un message ou /ask ..." autocomplete="off" required />
+              <button id="aiDraftBtn" type="button" class="ghost">Réponse IA</button>
+              <button type="submit">Envoyer</button>
+            </form>
+            <div class="hint">Commandes: <code>/ask</code> ou <code>@archipel-ai</code> | mode offline visible dans le badge AI</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel transfer">
+        <div class="section-head">
+          <h2>Transfert de fichiers</h2>
+          <button id="openUploadBtn" type="button">Envoyer document</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Manifest</th>
+                <th>Taille</th>
+                <th>SHA-256</th>
+                <th>Chunks</th>
+                <th>Sources</th>
+                <th>Progression</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="transferTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel trust">
+        <div class="section-head">
+          <h2>Trust & Sécurité</h2>
+          <div class="row">
+            <button id="revokeKeyBtn" type="button" class="danger">Révoquer ma clé</button>
+          </div>
+        </div>
+
+        <div class="trust-grid">
+          <div>
+            <p class="tool-title">Empreintes des clés publiques</p>
+            <div id="fingerprintList" class="stack-list"></div>
+          </div>
+          <div>
+            <p class="tool-title">Web of Trust</p>
+            <div id="wotList" class="stack-list"></div>
+          </div>
+        </div>
+
+        <p class="tool-title">Historique sécurité</p>
+        <pre id="securityEvents" class="security-log"></pre>
       </section>
     </main>
-
-    <button id="docFab" class="doc-fab" type="button">Envoyer document</button>
 
     <div id="docModal" class="modal hidden">
       <div class="modal-card">
         <h3>Envoi de document</h3>
         <form id="sendForm" class="stack">
           <input id="docTargetInput" name="nodeId" placeholder="node_id destinataire" required />
-          <input id="docPathInput" name="filePath" placeholder="/chemin/vers/fichier" required />
+          <input id="docFileInput" name="file" type="file" />
+          <div class="small">ou chemin manuel</div>
+          <input id="docPathInput" name="filePath" placeholder="/chemin/vers/fichier (optionnel)" />
           <div class="row">
             <button type="submit">Partager</button>
             <button id="closeModalBtn" type="button" class="ghost">Fermer</button>

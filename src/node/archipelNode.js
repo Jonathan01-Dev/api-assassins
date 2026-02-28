@@ -5,7 +5,7 @@ const net = require("net");
 const crypto = require("crypto");
 const sodium = require("libsodium-wrappers");
 
-const { loadOrCreateIdentity, nodeIdFromPublicKey } = require("../crypto/identity");
+const { loadOrCreateIdentity, nodeIdFromPublicKey, resolveIdentityPaths } = require("../crypto/identity");
 const { createKxKeypair, deriveSessionKeys } = require("../crypto/handshake");
 const { startDiscovery, DEFAULT_MCAST_ADDR, DEFAULT_UDP_PORT } = require("../network/discovery");
 const { PeerTable } = require("../network/peerTable");
@@ -63,6 +63,7 @@ class ArchipelNode {
 
     this.dataDir = path.resolve(opts.dataDir || path.join(process.cwd(), ".archipel", `node-${this.tcpPort}`));
     this.downloadDir = path.join(this.dataDir, "downloads");
+    this.uploadDir = path.join(this.dataDir, "uploads");
 
     this.paths = {
       peers: path.join(this.dataDir, "peers.json"),
@@ -111,6 +112,7 @@ class ArchipelNode {
   _loadState() {
     ensureDirSync(this.dataDir);
     ensureDirSync(this.downloadDir);
+    ensureDirSync(this.uploadDir);
 
     this.peerTable.hydrate(readJsonSync(this.paths.peers, []));
     this.trustStore = readJsonSync(this.paths.trust, {});
@@ -799,6 +801,20 @@ class ArchipelNode {
     };
   }
 
+  async sendUploadedBuffer(nodeId, filename, dataBuffer) {
+    const buf = Buffer.isBuffer(dataBuffer) ? dataBuffer : Buffer.from(dataBuffer || []);
+    if (!buf.length) throw new Error("fichier upload vide");
+
+    ensureDirSync(this.uploadDir);
+    const safeName = path
+      .basename(String(filename || "upload.bin"))
+      .replace(/[^a-zA-Z0-9._-]/g, "_");
+    const outPath = path.join(this.uploadDir, `${Date.now()}-${safeName}`);
+
+    await fsp.writeFile(outPath, buf);
+    return this.sendFile(nodeId, outPath);
+  }
+
   listAvailableFiles() {
     return Object.values(this.manifests).map((entry) => ({
       ...entry.manifest,
@@ -933,6 +949,12 @@ class ArchipelNode {
       peers: this.peerTable.getPeers().length,
       knownFiles: Object.keys(this.manifests).length,
       sharedFiles: Object.keys(this.shares).length,
+      encryption: {
+        active: Boolean(this.running),
+        transport: "XChaCha20-Poly1305",
+        handshake: "X25519",
+        identity: "Ed25519",
+      },
       stats: this.stats,
     };
   }
@@ -947,6 +969,38 @@ class ArchipelNode {
 
   getEvents(limit = 120) {
     return this.events.slice(-Math.max(1, Number(limit || 120)));
+  }
+
+  getTrustStore() {
+    return Object.entries(this.trustStore || {}).map(([nodeId, info]) => ({
+      nodeId,
+      fingerprint: info?.fingerprint || null,
+      status: info?.status || "tofu",
+      firstSeenAt: info?.firstSeenAt || null,
+      trustedAt: info?.trustedAt || null,
+    }));
+  }
+
+  async revokeOwnKey() {
+    const paths = resolveIdentityPaths(this.dataDir);
+    if (!fs.existsSync(paths.file)) {
+      throw new Error("clé locale introuvable");
+    }
+
+    const revokedPath = path.join(this.dataDir, `identity.revoked.${Date.now()}.json`);
+    fs.renameSync(paths.file, revokedPath);
+
+    const next = await loadOrCreateIdentity({ homeDir: this.dataDir });
+    const nextNodeId = nodeIdFromPublicKey(next.publicKey);
+
+    this.log(`[SEC] key rotation prepared old=${String(this.nodeId || "").slice(0, 12)}... new=${nextNodeId.slice(0, 12)}... (restart requis)`);
+
+    return {
+      revokedPath,
+      oldNodeId: this.nodeId,
+      nextNodeId,
+      restartRequired: true,
+    };
   }
 }
 
