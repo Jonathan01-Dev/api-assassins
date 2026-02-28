@@ -62,9 +62,10 @@ function printHelp() {
 Archipel CLI
 
 Commandes:
-  archipel start --port 7777 --admin-port 8787 [--data-dir .archipel/node-7777] [--no-ai]
+  archipel start --port 7777 --admin-port 8787 [--data-dir .archipel/node-7777] [--no-ai] [--ad-hoc]
   archipel peers [--admin-port 8787]
   archipel peer-add <node_id> <ip:port> [--admin-port 8787]
+  archipel hello [--admin-port 8787]
   archipel status [--admin-port 8787]
   archipel msg <node_id> <message> [--admin-port 8787]
   archipel send <node_id> <filepath> [--admin-port 8787]
@@ -78,6 +79,7 @@ Commandes:
 
 Exemple:
   node src/cli.js start --port 7777 --admin-port 8787
+  node src/cli.js start --port 7777 --admin-port 8787 --ad-hoc
   node src/cli.js peer-add <node_id> 192.168.1.50:7777 --admin-port 8787
   node src/cli.js peers --admin-port 8787
   node src/cli.js ai "propose une réponse simple"
@@ -137,6 +139,10 @@ async function runStart(flags) {
   );
   const noAiRaw = flags["no-ai"];
   const aiDisabled = noAiRaw === true || String(noAiRaw || "").toLowerCase() === "true";
+  const adhocRaw = flags["ad-hoc"] ?? process.env.ARCHIPEL_ADHOC;
+  const discoveryMode = adhocRaw === true || String(adhocRaw || "").toLowerCase() === "true"
+    ? "ad-hoc"
+    : "multicast";
 
   const node = new ArchipelNode({
     tcpPort,
@@ -145,6 +151,7 @@ async function runStart(flags) {
     peerTimeoutMs: num(flags["peer-timeout-ms"], 90000),
     helloIntervalMs: num(flags["hello-interval-ms"], 30000),
     multicastAddr: String(flags.multicast || "239.255.42.99"),
+    discoveryMode,
     dataDir,
   });
 
@@ -160,7 +167,7 @@ async function runStart(flags) {
 
   console.log(`\n[ARCHIPEL] CLI/API ready on http://127.0.0.1:${adminPort}`);
   console.log(`[ARCHIPEL] Web dashboard: http://127.0.0.1:${adminPort}`);
-  console.log(`[ARCHIPEL] Node TCP port: ${tcpPort} | UDP multicast: ${udpPort}`);
+  console.log(`[ARCHIPEL] Node TCP port: ${tcpPort} | UDP: ${udpPort} | Discovery: ${discoveryMode}`);
   console.log(`[ARCHIPEL] AI mode: ${aiDisabled ? "disabled (--no-ai)" : "enabled"}`);
 
   const shutdown = async () => {
@@ -215,6 +222,12 @@ async function main() {
       route: "/api/peer",
       body: { nodeId, ip, tcpPort },
     });
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  if (command === "hello") {
+    const out = await apiRequest({ adminPort, method: "POST", route: "/api/discovery/ping", body: {} });
     console.log(JSON.stringify(out, null, 2));
     return;
   }

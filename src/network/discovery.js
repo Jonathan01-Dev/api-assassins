@@ -9,8 +9,10 @@ const DEFAULT_UDP_PORT = 6000;
  *  tcpPort: number,
  *  udpPort?: number,
  *  multicastAddr?: string,
+ *  mode?: "multicast" | "ad-hoc",
  *  helloIntervalMs?: number,
  *  getHelloExtra?: ()=>Record<string, unknown>,
+ *  getAdhocTargets?: ()=>string[],
  *  onHello?: (peer: { nodeId: string, ip: string, tcpPort: number, ts: number, sharedFiles: string[] }) => void
  * }} opts
  */
@@ -20,8 +22,10 @@ function startDiscovery(opts) {
     tcpPort,
     udpPort = DEFAULT_UDP_PORT,
     multicastAddr = DEFAULT_MCAST_ADDR,
+    mode = "multicast",
     helloIntervalMs = 30000,
     getHelloExtra,
+    getAdhocTargets,
     onHello,
   } = opts;
 
@@ -57,12 +61,16 @@ function startDiscovery(opts) {
 
   socket.bind(udpPort, () => {
     try {
-      socket.addMembership(multicastAddr);
-      socket.setMulticastTTL(128);
       socket.setBroadcast(true);
-      console.log(`[UDP] listening on ${multicastAddr}:${udpPort}`);
+      if (mode === "ad-hoc") {
+        console.log(`[UDP] ad-hoc discovery listening on 0.0.0.0:${udpPort}`);
+      } else {
+        socket.addMembership(multicastAddr);
+        socket.setMulticastTTL(128);
+        console.log(`[UDP] multicast discovery listening on ${multicastAddr}:${udpPort}`);
+      }
     } catch (err) {
-      console.log(`[UDP] addMembership failed: ${err.message}`);
+      console.log(`[UDP] discovery bind setup failed: ${err.message}`);
     }
   });
 
@@ -77,6 +85,17 @@ function startDiscovery(opts) {
 
     const payload = Buffer.from(JSON.stringify(payloadObj), "utf8");
 
+    if (mode === "ad-hoc") {
+      const targetsRaw = typeof getAdhocTargets === "function" ? getAdhocTargets() : [];
+      const targets = Array.from(new Set((targetsRaw || []).map((x) => String(x || "").trim()).filter(Boolean)));
+      for (const ip of targets) {
+        socket.send(payload, 0, payload.length, udpPort, ip, (err) => {
+          if (err) console.log(`[UDP] ad-hoc send error to ${ip}: ${err.message}`);
+        });
+      }
+      return;
+    }
+
     socket.send(payload, 0, payload.length, udpPort, multicastAddr, (err) => {
       if (err) console.log(`[UDP] send error: ${err.message}`);
     });
@@ -87,9 +106,11 @@ function startDiscovery(opts) {
 
   function stop() {
     clearInterval(timer);
-    try {
-      socket.dropMembership(multicastAddr);
-    } catch (_) {}
+    if (mode !== "ad-hoc") {
+      try {
+        socket.dropMembership(multicastAddr);
+      } catch (_) {}
+    }
     socket.close();
   }
 

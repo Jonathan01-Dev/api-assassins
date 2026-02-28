@@ -29,6 +29,13 @@ Format binaire interne (après tunnel chiffré):
 Après vérification (TOFU/Web of Trust), les clés session `rx/tx` sont dérivées via X25519.
 Ensuite tous les paquets Archipel sont envoyés dans `FRAME_ENCRYPTED`.
 
+## Découverte des pairs
+
+Deux modes supportés:
+
+- `multicast` (défaut): HELLO envoyé sur `239.255.42.99:<udpPort>`
+- `ad-hoc`: HELLO envoyé en unicast UDP vers les IP des peers ajoutés manuellement
+
 ## Chunking
 
 - chunk size par défaut: `524288` (512 KB)

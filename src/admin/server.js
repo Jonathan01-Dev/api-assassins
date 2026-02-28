@@ -194,6 +194,11 @@ function createAdminServer(node, opts = {}) {
           return json(res, 200, { ok: true, data });
         }
 
+        if (req.method === "POST" && u.pathname === "/api/discovery/ping") {
+          const data = node.sendDiscoveryHello();
+          return json(res, 200, { ok: true, data });
+        }
+
         if (req.method === "GET" && u.pathname === "/api/ai/status") {
           return json(res, 200, {
             ok: true,

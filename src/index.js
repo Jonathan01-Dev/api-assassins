@@ -17,6 +17,7 @@ const { createAdminServer } = require("./admin/server");
     udpPort,
     dataDir,
     multicastAddr: process.env.MULTICAST_ADDR || "239.255.42.99",
+    discoveryMode: String(process.env.ARCHIPEL_ADHOC || "").trim() === "1" ? "ad-hoc" : "multicast",
   });
 
   await node.start();

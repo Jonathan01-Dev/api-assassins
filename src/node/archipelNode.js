@@ -57,6 +57,9 @@ class ArchipelNode {
     this.tcpPort = Number(opts.tcpPort || 7777);
     this.udpPort = Number(opts.udpPort || DEFAULT_UDP_PORT);
     this.multicastAddr = opts.multicastAddr || DEFAULT_MCAST_ADDR;
+    this.discoveryMode = String(opts.discoveryMode || "multicast").toLowerCase() === "ad-hoc"
+      ? "ad-hoc"
+      : "multicast";
     this.peerTimeoutMs = Number(opts.peerTimeoutMs || 90_000);
     this.chunkSize = Number(opts.chunkSize || 524_288);
     this.helloIntervalMs = Number(opts.helloIntervalMs || 30_000);
@@ -159,8 +162,14 @@ class ArchipelNode {
       tcpPort: this.tcpPort,
       udpPort: this.udpPort,
       multicastAddr: this.multicastAddr,
+      mode: this.discoveryMode,
       helloIntervalMs: this.helloIntervalMs,
       getHelloExtra: () => ({ sharedFiles: this.getSharedFileIds() }),
+      getAdhocTargets: () =>
+        this.peerTable
+          .getPeers()
+          .map((p) => String(p.ip || "").trim())
+          .filter(Boolean),
       onHello: (peer) => {
         if (peer.nodeId === this.nodeId) return;
         this.peerTable.upsertPeer({
@@ -179,7 +188,9 @@ class ArchipelNode {
     }, 5_000);
 
     this.running = true;
-    this.log(`[NODE] started nodeId=${this.nodeId.slice(0, 12)}... tcp=${this.tcpPort} dataDir=${this.dataDir}`);
+    this.log(
+      `[NODE] started nodeId=${this.nodeId.slice(0, 12)}... tcp=${this.tcpPort} udp=${this.udpPort} discovery=${this.discoveryMode} dataDir=${this.dataDir}`
+    );
   }
 
   async stop() {
@@ -279,6 +290,11 @@ class ArchipelNode {
       lastSeen: Date.now(),
     });
     this._saveState();
+
+    if (this.discovery && typeof this.discovery.sendHelloNow === "function") {
+      this.discovery.sendHelloNow();
+    }
+
     return this.peerTable.getPeer(full);
   }
 
@@ -943,6 +959,7 @@ class ArchipelNode {
       running: this.running,
       tcpPort: this.tcpPort,
       udpPort: this.udpPort,
+      discoveryMode: this.discoveryMode,
       multicastAddr: this.multicastAddr,
       dataDir: this.dataDir,
       uptimeSec,
@@ -969,6 +986,14 @@ class ArchipelNode {
 
   getEvents(limit = 120) {
     return this.events.slice(-Math.max(1, Number(limit || 120)));
+  }
+
+  sendDiscoveryHello() {
+    if (!this.discovery || typeof this.discovery.sendHelloNow !== "function") {
+      return { sent: false, mode: this.discoveryMode };
+    }
+    this.discovery.sendHelloNow();
+    return { sent: true, mode: this.discoveryMode };
   }
 
   getTrustStore() {

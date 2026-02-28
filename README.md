@@ -66,7 +66,7 @@ Le script:
 ## 4) Démarrer un nœud
 
 ```bash
-node src/cli.js start --port 7777 --admin-port 8787 [--no-ai]
+node src/cli.js start --port 7777 --admin-port 8787 [--no-ai] [--ad-hoc]
 ```
 
 Dashboard web:
@@ -80,6 +80,7 @@ Par défaut, les données du nœud sont stockées dans:
 ```bash
 node src/cli.js status --admin-port 8787
 node src/cli.js peers --admin-port 8787
+node src/cli.js hello --admin-port 8787
 node src/cli.js msg <node_id> "Hello" --admin-port 8787
 node src/cli.js send <node_id> /tmp/fichier.bin --admin-port 8787
 node src/cli.js ai "propose une réponse simple" --admin-port 8787
@@ -122,6 +123,27 @@ node src/cli.js receive --admin-port 8788
 node src/cli.js download <FILE_ID> --admin-port 8788
 ```
 
+Mode ad-hoc (sans multicast, pair manuel):
+
+Terminal A:
+```bash
+node src/cli.js start --port 7777 --admin-port 8787 --ad-hoc --data-dir /tmp/arch-a
+```
+
+Terminal B:
+```bash
+node src/cli.js start --port 7778 --admin-port 8788 --ad-hoc --data-dir /tmp/arch-b
+```
+
+Puis ajouter les peers manuellement et forcer HELLO:
+
+```bash
+node src/cli.js peer-add <NODE_ID_B> 192.168.1.20:7778 --admin-port 8787
+node src/cli.js peer-add <NODE_ID_A> 192.168.1.10:7777 --admin-port 8788
+node src/cli.js hello --admin-port 8787
+node src/cli.js hello --admin-port 8788
+```
+
 ## 7) Structure projet
 
 ```
@@ -141,6 +163,7 @@ apps/web/        site web local (dashboard + actions)
 - Fonctionne en LAN local sans Internet.
 - Le chat P2P reste offline; Gemini est optionnel via l’API locale.
 - Pour forcer le mode offline IA: lancer avec `--no-ai` (ou `ARCHIPEL_NO_AI=1`).
+- Pour forcer la découverte ad-hoc (sans multicast): lancer avec `--ad-hoc` (ou `ARCHIPEL_ADHOC=1`).
 - Pour lancer plusieurs nœuds sur la même machine: utiliser des `--data-dir` et ports différents.
 
 ## 9) Intégration Gemini (optionnelle)
