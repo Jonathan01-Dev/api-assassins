@@ -516,19 +516,33 @@ class ArchipelNode {
 
     if (!raw) throw new Error("node_id vide");
 
+    const tokenMatches = raw.match(/[0-9a-f]{6,64}/g) || [];
+    const fullMatch = tokenMatches.find((t) => t.length === 64) || null;
+    const bestToken = tokenMatches.length
+      ? tokenMatches.slice().sort((a, b) => b.length - a.length)[0]
+      : "";
+
+    // Format abrégé tolérant (ex: "Mon node: abcdef123456...7890ab")
+    const shortRawParts = raw.split(/\.{3}|…/);
+    const shortParts = shortRawParts
+      .map((part) => {
+        const m = part.match(/[0-9a-f]{6,64}/g) || [];
+        return m.length ? m[m.length - 1] : "";
+      })
+      .filter(Boolean);
+
+    const shortStart = shortParts.length >= 2 ? shortParts[0] : "";
+    const shortEnd = shortParts.length >= 2 ? shortParts[shortParts.length - 1] : "";
+
+    const normalizedInput = (fullMatch || bestToken || raw.replace(/[^0-9a-f]/g, "")).slice(0, 64);
+    if (!normalizedInput) throw new Error("node_id invalide");
+
     // Détection explicite du node local (full, prefix ou format abrégé).
     if (ownId) {
-      const ownParts = raw.split(/\.{3}|…/).filter(Boolean);
-      if (ownParts.length === 2) {
-        const ownStart = ownParts[0].replace(/[^0-9a-f]/g, "");
-        const ownEnd = ownParts[1].replace(/[^0-9a-f]/g, "");
-        if (ownStart && ownEnd && ownId.startsWith(ownStart) && ownId.endsWith(ownEnd)) {
-          return ownId;
-        }
+      if (shortStart && shortEnd && ownId.startsWith(shortStart) && ownId.endsWith(shortEnd)) {
+        return ownId;
       }
-
-      const ownClean = raw.replace(/[^0-9a-f]/g, "");
-      if (ownClean && (ownId === ownClean || ownId.startsWith(ownClean))) {
+      if (ownId === normalizedInput || ownId.startsWith(normalizedInput)) {
         return ownId;
       }
     }
@@ -538,29 +552,26 @@ class ArchipelNode {
       throw new Error("node_id introuvable: aucun peer détecté (vérifie le réseau et /api/peers)");
     }
 
-    // Support format abrégé copié depuis l'UI: abcd1234...ef90
-    const shortParts = raw.split(/\.{3}|…/).filter(Boolean);
-    if (shortParts.length === 2) {
-      const start = shortParts[0].replace(/[^0-9a-f]/g, "");
-      const end = shortParts[1].replace(/[^0-9a-f]/g, "");
-
-      const shortMatches = peers.filter((p) => p.nodeId.startsWith(start) && p.nodeId.endsWith(end));
+    if (shortStart && shortEnd) {
+      const shortMatches = peers.filter((p) => p.nodeId.startsWith(shortStart) && p.nodeId.endsWith(shortEnd));
       if (shortMatches.length === 1) return shortMatches[0].nodeId;
       if (shortMatches.length > 1) throw new Error("node_id ambigu (format abrégé correspond à plusieurs peers)");
     }
 
-    // Nettoie les caractères non-hexa éventuels (guillemets, ponctuation, etc.).
-    const cleaned = raw.replace(/[^0-9a-f]/g, "");
-    if (!cleaned) throw new Error("node_id invalide");
-
-    const exact = this.peerTable.getPeer(cleaned);
+    const exact = this.peerTable.getPeer(normalizedInput);
     if (exact) return exact.nodeId;
 
-    const prefixMatches = peers.filter((p) => p.nodeId.startsWith(cleaned));
+    const prefixMatches = peers.filter((p) => p.nodeId.startsWith(normalizedInput));
     if (prefixMatches.length === 1) return prefixMatches[0].nodeId;
     if (prefixMatches.length > 1) throw new Error("node_id ambigu (plusieurs peers)");
 
-    throw new Error(`node_id introuvable dans les peers: ${cleaned.slice(0, 16)}...`);
+    // Dernière chance: un token 64 hex présent dans l'entrée
+    if (fullMatch) {
+      const fullExact = this.peerTable.getPeer(fullMatch);
+      if (fullExact) return fullExact.nodeId;
+    }
+
+    throw new Error(`node_id introuvable dans les peers: ${normalizedInput.slice(0, 16)}...`);
   }
 
   _ackPacket(payload) {
