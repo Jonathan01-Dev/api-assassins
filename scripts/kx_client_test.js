@@ -1,52 +1,69 @@
 // scripts/kx_client_test.js
+// Test minimal du handshake KX contre src/network/tcpServer.js
 const net = require("net");
 const sodium = require("libsodium-wrappers");
-const { createKxKeypair, deriveSessionKeys } = require("../src/crypto/handshake");
 
-const port = Number(process.argv[2] || 7777);
+const { createKxKeypair, deriveSessionKeys } = require("../src/crypto/handshake");
+const { encodeFrame, FrameDecoder } = require("../src/network/frame");
+const { FRAME_KX_PUB } = require("../src/network/secureChannel");
+
+const host = process.argv[2] || "127.0.0.1";
+const port = Number(process.argv[3] || process.env.TCP_PORT || 7999);
 
 (async () => {
   await sodium.ready;
 
-  console.log("CLIENT: starting...");
   const myKx = await createKxKeypair();
+  const socket = net.connect({ host, port });
+  let done = false;
 
-  const s = net.connect(port, "127.0.0.1", () => {
-    console.log("CLIENT: connected to", port);
-  });
+  const timeout = setTimeout(() => {
+    if (done) return;
+    done = true;
+    console.error("[KX TEST] timeout");
+    socket.destroy();
+    process.exit(1);
+  }, 8000);
 
-  let buf = "";
-  let serverPub = null;
+  const finish = (ok, msg) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timeout);
+    if (ok) {
+      console.log(`[KX TEST] ${msg}`);
+      socket.end();
+      process.exit(0);
+    } else {
+      console.error(`[KX TEST] ${msg}`);
+      socket.destroy();
+      process.exit(1);
+    }
+  };
 
-  // Envoie notre KX_PUB immédiatement (plus simple)
-  s.write(
-    JSON.stringify({
-      type: "KX_PUB",
-      publicKey: Buffer.from(myKx.publicKey).toString("base64"),
-    }) + "\n"
-  );
-  console.log("CLIENT: sent KX_PUB");
-
-  s.on("data", async (d) => {
-    buf += d.toString("utf8");
-    while (buf.includes("\n")) {
-      const i = buf.indexOf("\n");
-      const line = buf.slice(0, i).trim();
-      buf = buf.slice(i + 1);
-
-      if (!line) continue;
-
-      const msg = JSON.parse(line);
-      if (msg.type === "KX_PUB") {
-        serverPub = Buffer.from(msg.publicKey, "base64");
-        console.log("CLIENT: received server KX_PUB");
-
-        // Client role = "client"
-        const keys = await deriveSessionKeys("client", myKx, serverPub);
-        console.log("CLIENT: 🔐 Session established (rx/tx ready)");
+  const decoder = new FrameDecoder(async (type, payload) => {
+    try {
+      if (type !== FRAME_KX_PUB) {
+        return finish(false, `unexpected frame type=${type}`);
       }
+      if (payload.length !== 32) {
+        return finish(false, `invalid KX_PUB length=${payload.length}`);
+      }
+
+      const theirPub = new Uint8Array(payload);
+      const keys = await deriveSessionKeys("client", myKx, theirPub);
+      if (!keys?.rx || !keys?.tx) {
+        return finish(false, "session keys missing");
+      }
+
+      finish(true, "session established (rx/tx derived)");
+    } catch (err) {
+      finish(false, err.message);
     }
   });
 
-  s.on("error", (e) => console.log("CLIENT ERR:", e.message));
+  socket.on("connect", () => {
+    socket.write(encodeFrame(FRAME_KX_PUB, Buffer.from(myKx.publicKey)));
+  });
+  socket.on("data", (chunk) => decoder.push(chunk));
+  socket.on("error", (err) => finish(false, err.message));
 })();

@@ -27,6 +27,10 @@ class PeerTable {
     return this.peers.get(nodeId);
   }
 
+  removePeer(nodeId) {
+    this.peers.delete(nodeId);
+  }
+
   getPeers() {
     return Array.from(this.peers.values()).sort((a, b) => b.lastSeen - a.lastSeen);
   }

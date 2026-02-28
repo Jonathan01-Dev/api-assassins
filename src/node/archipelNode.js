@@ -148,7 +148,10 @@ class ArchipelNode {
     this.startedAt = Date.now();
     this.stats.startedAt = new Date(this.startedAt).toISOString();
 
-    this.tcpServer = this._startTcpServer();
+    this.tcpServer = await this._startTcpServer();
+
+    // Defensive cleanup: never keep ourselves in peer cache.
+    this.peerTable.removePeer(this.nodeId);
     this.discovery = startDiscovery({
       nodeId: this.nodeId,
       tcpPort: this.tcpPort,
@@ -157,6 +160,7 @@ class ArchipelNode {
       helloIntervalMs: this.helloIntervalMs,
       getHelloExtra: () => ({ sharedFiles: this.getSharedFileIds() }),
       onHello: (peer) => {
+        if (peer.nodeId === this.nodeId) return;
         this.peerTable.upsertPeer({
           nodeId: peer.nodeId,
           ip: peer.ip,
@@ -314,22 +318,29 @@ class ArchipelNode {
   }
 
   _startTcpServer() {
-    const server = net.createServer((socket) => {
-      this._handleIncomingSocket(socket).catch((err) => {
-        this.log(`[TCP] incoming socket error: ${err.message}`);
-        socket.destroy();
+    return new Promise((resolve, reject) => {
+      const server = net.createServer((socket) => {
+        this._handleIncomingSocket(socket).catch((err) => {
+          this.log(`[TCP] incoming socket error: ${err.message}`);
+          socket.destroy();
+        });
+      });
+
+      let listening = false;
+
+      server.on("error", (err) => {
+        this.log(`[TCP] server error: ${err.message}`);
+        if (!listening) {
+          reject(err);
+        }
+      });
+
+      server.listen(this.tcpPort, () => {
+        listening = true;
+        this.log(`[TCP] listening on port ${this.tcpPort}`);
+        resolve(server);
       });
     });
-
-    server.on("error", (err) => {
-      this.log(`[TCP] server error: ${err.message}`);
-    });
-
-    server.listen(this.tcpPort, () => {
-      this.log(`[TCP] listening on port ${this.tcpPort}`);
-    });
-
-    return server;
   }
 
   async _handleIncomingSocket(socket) {
@@ -351,7 +362,7 @@ class ArchipelNode {
 
           peer = this._parseAndVerifyHandshake(payload);
           if (peer.nodeId === this.nodeId) {
-            throw new Error("self-connection blocked");
+            throw new Error("self-connection blocked (same identity detected on both sides)");
           }
 
           const keys = await deriveSessionKeys("server", myKx, peer.ephemeralPublicKey);
@@ -404,6 +415,9 @@ class ArchipelNode {
     const expectType = opts.expectType;
     const timeoutMs = Number(opts.timeoutMs || 10_000);
     const resolvedPeerNodeId = this._resolvePeerNodeId(peerNodeId);
+    if (resolvedPeerNodeId === this.nodeId) {
+      throw new Error("refus: tentative d'envoi vers soi-même (node_id local)");
+    }
 
     const peer = this.peerTable.getPeer(resolvedPeerNodeId);
     if (!peer) throw new Error(`unknown peer ${resolvedPeerNodeId}`);
@@ -493,10 +507,7 @@ class ArchipelNode {
   }
 
   _resolvePeerNodeId(nodeIdInput) {
-    const peers = this.peerTable.getPeers();
-    if (!peers.length) {
-      throw new Error("node_id introuvable: aucun peer détecté (vérifie le réseau et /api/peers)");
-    }
+    const ownId = String(this.nodeId || "").toLowerCase();
 
     const raw = String(nodeIdInput || "")
       .trim()
@@ -504,6 +515,28 @@ class ArchipelNode {
       .replace(/\s+/g, "");
 
     if (!raw) throw new Error("node_id vide");
+
+    // Détection explicite du node local (full, prefix ou format abrégé).
+    if (ownId) {
+      const ownParts = raw.split(/\.{3}|…/).filter(Boolean);
+      if (ownParts.length === 2) {
+        const ownStart = ownParts[0].replace(/[^0-9a-f]/g, "");
+        const ownEnd = ownParts[1].replace(/[^0-9a-f]/g, "");
+        if (ownStart && ownEnd && ownId.startsWith(ownStart) && ownId.endsWith(ownEnd)) {
+          return ownId;
+        }
+      }
+
+      const ownClean = raw.replace(/[^0-9a-f]/g, "");
+      if (ownClean && (ownId === ownClean || ownId.startsWith(ownClean))) {
+        return ownId;
+      }
+    }
+
+    const peers = this.peerTable.getPeers();
+    if (!peers.length) {
+      throw new Error("node_id introuvable: aucun peer détecté (vérifie le réseau et /api/peers)");
+    }
 
     // Support format abrégé copié depuis l'UI: abcd1234...ef90
     const shortParts = raw.split(/\.{3}|…/).filter(Boolean);
