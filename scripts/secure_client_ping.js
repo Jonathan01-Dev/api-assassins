@@ -1,5 +1,4 @@
 // scripts/secure_client_ping.js
-
 const net = require("net");
 const sodium = require("libsodium-wrappers");
 
@@ -10,8 +9,9 @@ const {
   FRAME_ENCRYPTED,
   MSG_PING,
   MSG_PONG,
-  sealFrame,
-  openFrame,
+  SecureChannelState,
+  sealFrameState,
+  openFrameState,
 } = require("../src/network/secureChannel");
 
 (async () => {
@@ -25,6 +25,9 @@ const {
   const myKx = await createKxKeypair();
   let session = null;
 
+  // ✅ channel state (seq + anti-replay)
+  const chan = new SecureChannelState({ windowSize: 64 });
+
   console.log(`[CLIENT] connecting to ${host}:${port} ...`);
 
   socket.on("error", (err) => {
@@ -34,48 +37,33 @@ const {
 
   socket.on("connect", () => {
     console.log("[CLIENT] connected");
-
-    // Envoie notre clé publique X25519
     socket.write(encodeFrame(FRAME_KX_PUB, Buffer.from(myKx.publicKey)));
   });
 
   const decoder = new FrameDecoder(async (type, payload) => {
     try {
-      // ------------------------
-      // Phase Handshake
-      // ------------------------
+      // Handshake
       if (!session) {
-        if (type !== FRAME_KX_PUB) {
-          throw new Error("Expected FRAME_KX_PUB during handshake");
-        }
-
-        if (payload.length !== 32) {
-          throw new Error("Invalid KX public key length");
-        }
+        if (type !== FRAME_KX_PUB) throw new Error("Expected FRAME_KX_PUB during handshake");
+        if (payload.length !== 32) throw new Error("Invalid KX public key length");
 
         const theirPub = new Uint8Array(payload);
-
         const keys = await deriveSessionKeys("client", myKx, theirPub);
         session = { rx: keys.rx, tx: keys.tx };
 
         console.log("[CLIENT] 🔐 session established");
 
-        // Envoie un PING chiffré
+        // Send encrypted PING (stateful)
         const message = Buffer.from("hello-secure", "utf8");
-        const encryptedPayload = await sealFrame(session.tx, MSG_PING, message);
-
+        const encryptedPayload = await sealFrameState(session.tx, chan, MSG_PING, message);
         socket.write(encodeFrame(FRAME_ENCRYPTED, encryptedPayload));
         return;
       }
 
-      // ------------------------
-      // Phase Secure
-      // ------------------------
-      if (type !== FRAME_ENCRYPTED) {
-        throw new Error("Received clear frame after handshake");
-      }
+      // Secure phase
+      if (type !== FRAME_ENCRYPTED) throw new Error("Received clear frame after handshake");
 
-      const inner = await openFrame(session.rx, payload);
+      const inner = await openFrameState(session.rx, chan, payload);
 
       if (inner.type === MSG_PONG) {
         console.log("[CLIENT] ✅ got PONG:", inner.payload.toString("utf8"));
@@ -90,11 +78,6 @@ const {
     }
   });
 
-  socket.on("data", (chunk) => {
-    decoder.push(chunk);
-  });
-
-  socket.on("close", () => {
-    console.log("[CLIENT] connection closed");
-  });
+  socket.on("data", (chunk) => decoder.push(chunk));
+  socket.on("close", () => console.log("[CLIENT] connection closed"));
 })();
